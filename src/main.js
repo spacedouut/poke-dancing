@@ -1,6 +1,7 @@
 import './style.css';
 import { frames } from './animation.js';
 import { generateLiquidGlassFilter } from './liquidGlass.js';
+import { LiquidGlassBlob } from './liquidGlassWebGL.js';
 import { fireShader } from './fireShader.js';
 
 const fps = 30;
@@ -12,6 +13,7 @@ const FILL = 0.5;
 let hueOffset = 0;
 let currentStyle = 'classic';
 let liquidGlassBlob = null;
+let liquidGlassBlobWebGL = null;
 let svgDefs = null;
 let mouseX = 0;
 let mouseY = 0;
@@ -153,25 +155,35 @@ function applyCurrentStyle() {
   styles[currentStyle].apply();
 
   if (currentStyle === 'liquid-glass') {
-    if (!liquidGlassBlob) {
-      // Create SVG defs container
-      if (!svgDefs) {
-        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-        svg.setAttribute("width", "0");
-        svg.setAttribute("height", "0");
-        svg.style.position = "absolute";
-        svg.style.overflow = "hidden";
-        svgDefs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
-        svg.appendChild(svgDefs);
-        document.body.appendChild(svg);
-      }
+    if (!liquidGlassBlobWebGL) {
+      liquidGlassBlobWebGL = new LiquidGlassBlob();
+      if (liquidGlassBlobWebGL.init()) {
+        liquidGlassBlobWebGL.render();
+      } else {
+        // Fallback to SVG if WebGL not supported
+        console.warn('WebGL not supported, falling back to SVG filter');
+        if (!svgDefs) {
+          const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+          svg.setAttribute("width", "0");
+          svg.setAttribute("height", "0");
+          svg.style.position = "absolute";
+          svg.style.overflow = "hidden";
+          svgDefs = document.createElementNS("http://www.w3.org/2000/svg", "defs");
+          svg.appendChild(svgDefs);
+          document.body.appendChild(svg);
+        }
 
-      liquidGlassBlob = document.createElement('div');
-      liquidGlassBlob.id = 'liquid-blob';
-      document.body.appendChild(liquidGlassBlob);
-      updateLiquidGlassFilter();
+        liquidGlassBlob = document.createElement('div');
+        liquidGlassBlob.id = 'liquid-blob';
+        document.body.appendChild(liquidGlassBlob);
+        updateLiquidGlassFilter();
+      }
     }
   } else {
+    if (liquidGlassBlobWebGL) {
+      liquidGlassBlobWebGL.destroy();
+      liquidGlassBlobWebGL = null;
+    }
     if (liquidGlassBlob) {
       liquidGlassBlob.remove();
       liquidGlassBlob = null;
@@ -244,7 +256,12 @@ window.addEventListener("resize", fit);
 window.addEventListener("mousemove", (e) => {
   mouseX = e.clientX;
   mouseY = e.clientY;
-  updateLiquidBlob();
+
+  if (liquidGlassBlobWebGL) {
+    liquidGlassBlobWebGL.setMousePosition(mouseX, mouseY);
+  } else {
+    updateLiquidBlob();
+  }
 });
 
 if (frames && frames.length > 0) {

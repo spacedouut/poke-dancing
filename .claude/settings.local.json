@@ -6,7 +6,11 @@
       "WebFetch(domain:poke.com)",
       "Bash(curl *)",
       "Bash(git clone *)",
-      "WebFetch(domain:www.desmos.com)"
+      "WebFetch(domain:www.desmos.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(git add *)",
+      "Bash(git commit -m 'feat: add liquid glass shader files from mia-riezebos/amibeinganthrottled.com *)",
+      "Bash(git push *)"
     ]
   }
 }
