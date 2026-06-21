@@ -92,11 +92,6 @@ export class FireShaderWebGL {
       uniform float u_fireSaturation;
       varying vec2 v_uv;
 
-      float smoothstep(float edge0, float edge1, float x) {
-        float t = clamp((x - edge0) / (edge1 - edge0), 0.0, 1.0);
-        return t * t * (3.0 - 2.0 * t);
-      }
-
       float blendOverlay(float a, float b) {
         return a < 0.5 ? (2.0 * a * b) : (1.0 - 2.0 * (1.0 - a) * (1.0 - b));
       }
@@ -203,6 +198,27 @@ export class FireShaderWebGL {
     const pixels = new Uint8Array(4);
     gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixels);
     return { r: pixels[0], g: pixels[1], b: pixels[2] };
+  }
+
+  // Batch read all pixels at once (much faster)
+  getAllPixels() {
+    const gl = this.gl;
+    if (!this.pixelCache) {
+      this.pixelCache = new Uint8Array(this.textureWidth * this.textureHeight * 4);
+    }
+    gl.readPixels(0, 0, this.textureWidth, this.textureHeight, gl.RGBA, gl.UNSIGNED_BYTE, this.pixelCache);
+    return this.pixelCache;
+  }
+
+  getColorAtFromCache(x, y, pixelCache) {
+    const px = Math.floor(x * this.textureWidth);
+    const py = Math.floor(y * this.textureHeight);
+    const idx = (py * this.textureWidth + px) * 4;
+    return {
+      r: pixelCache[idx],
+      g: pixelCache[idx + 1],
+      b: pixelCache[idx + 2]
+    };
   }
 
   destroy() {

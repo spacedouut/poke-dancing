@@ -85,6 +85,9 @@ const styles = {
       if (fireShaderWebGL) {
         fireShaderWebGL.render(time);
 
+        // Batch read all pixels once instead of per-character
+        const pixelCache = fireShaderWebGL.getAllPixels();
+
         const lineCount = lines.length;
         const result = new Array(lineCount);
 
@@ -97,7 +100,7 @@ const styles = {
             const char = line[charIndex];
             const u = charIndex / lineLength;
             const v = i / lineCount;
-            const color = fireShaderWebGL.getColorAt(u, v);
+            const color = fireShaderWebGL.getColorAtFromCache(u, v, pixelCache);
             const glowColor = `rgb(${color.r},${color.g},${color.b})`;
             chars[charIndex] = `<span style="color:${glowColor};text-shadow:0 0 15px ${glowColor}">${char}</span>`;
           }

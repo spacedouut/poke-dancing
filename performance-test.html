@@ -252,12 +252,15 @@
 
       webglShader.render(time);
 
+      // Batch read all pixels once
+      const pixelCache = webglShader.getAllPixels();
+
       const html = lines.map((line, i) => {
         const lineLength = line.length || 1;
         return Array.from(line).map((char, j) => {
           const u = j / lineLength;
           const v = i / lines.length;
-          const c = webglShader.getColorAt(u, v);
+          const c = webglShader.getColorAtFromCache(u, v, pixelCache);
           const col = \`rgb(\${c.r},\${c.g},\${c.b})\`;
           return \`<span style="color:\${col};text-shadow:0 0 10px \${col}">\${char}</span>\`;
         }).join('');
@@ -267,7 +270,7 @@
 
       document.getElementById('stat-mode').textContent = 'WebGL GPU';
       document.getElementById('stat-grid').textContent = '256×256 texture';
-      document.getElementById('stat-calls').textContent = 'GPU parallel';
+      document.getElementById('stat-calls').textContent = '1 batch read';
       document.getElementById('stat-zones').textContent = '65,536';
 
       frameTimes.push(performance.now() - start);
