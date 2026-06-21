@@ -206,7 +206,7 @@
           const gridX = Math.floor((j / lineLength) * (gridCols - 1));
           const c = colorGrid[gridY][gridX];
           const col = \`rgb(\${c.r},\${c.g},\${c.b})\`;
-          return \`<span style="color:\${col};text-shadow:0 0 10px \${col}">\${char}</span>\`;
+          return \`<span style="color:\${col}">\${char}</span>\`;
         }).join('');
       }).join('\\n');
 
@@ -262,7 +262,7 @@
           const v = i / lines.length;
           const c = webglShader.getColorAtFromCache(u, v, pixelCache);
           const col = \`rgb(\${c.r},\${c.g},\${c.b})\`;
-          return \`<span style="color:\${col};text-shadow:0 0 10px \${col}">\${char}</span>\`;
+          return \`<span style="color:\${col}">\${char}</span>\`;
         }).join('');
       }).join('\\n');
 

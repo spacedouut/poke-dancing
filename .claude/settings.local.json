@@ -12,7 +12,9 @@
       "Bash(git commit -m 'feat: add liquid glass shader files from mia-riezebos/amibeinganthrottled.com *)",
       "Bash(git push *)",
       "Bash(grep -E \"\\\\.\\(glsl|frag|vert|js\\)$\")",
-      "Bash(grep -o '`..*`' src/animation.js)"
+      "Bash(grep -o '`..*`' src/animation.js)",
+      "Workflow(deep-research)",
+      "WebFetch(domain:www.andrew.hedges.name)"
     ]
   }
 }

@@ -100,7 +100,7 @@ export class FireShaderOptimized {
 
         const color = this.getColorAtUV(u, v);
         const glowColor = `rgb(${color.r},${color.g},${color.b})`;
-        chars[charIndex] = `<span style="color:${glowColor};text-shadow:0 0 15px ${glowColor}">${char}</span>`;
+        chars[charIndex] = `<span style="color:${glowColor}">${char}</span>`;
       }
 
       result[i] = chars.join('');

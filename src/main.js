@@ -1,10 +1,12 @@
 import './style.css';
+import './fireControlPanel.css';
 import { frames } from './animation.js';
 import { generateLiquidGlassFilter } from './liquidGlass.js';
 import { LiquidGlassBlob } from './liquidGlassWebGL.js';
 import { fireShader } from './fireShader.js';
 import { FireShaderWebGL } from './fireShaderWebGL.js';
 import { FireShaderOptimized } from './fireShaderOptimized.js';
+import { FireControlPanel, createPanelToggleButton } from './fireControlPanel.js';
 
 const fps = 30;
 const stage = document.getElementById("stage");
@@ -22,6 +24,8 @@ let mouseY = 0;
 let fireShaderWebGL = null;
 let fireShaderOptimized = null;
 let performanceMonitor = { frames: [], avgFps: 30, lastDropTime: 0 };
+let fireControlPanel = null;
+let fireSettings = { mode: 'auto', quality: 'high', showGlow: false, glowIntensity: 15, showStats: true };
 
 const styles = {
   'classic': {
@@ -81,13 +85,33 @@ const styles = {
       const time = Date.now() / 1000;
       const startTime = performance.now();
 
-      // Try WebGL first, fall back to optimized CPU
-      if (fireShaderWebGL) {
+      const glowStyle = fireSettings.showGlow ? `text-shadow:0 0 ${fireSettings.glowIntensity}px ` : '';
+
+      // Determine which renderer to use based on settings
+      let useWebGL = false;
+      let useCPU = false;
+
+      if (fireSettings.mode === 'auto') {
+        useWebGL = fireShaderWebGL !== null;
+        useCPU = !useWebGL && fireShaderOptimized !== null;
+      } else if (fireSettings.mode === 'webgl') {
+        useWebGL = fireShaderWebGL !== null;
+      } else if (fireSettings.mode === 'cpu') {
+        useCPU = fireShaderOptimized !== null;
+      }
+
+      let shaderTime = 0;
+      let shaderCalls = 0;
+      let charCount = 0;
+
+      // Try WebGL first (if enabled)
+      if (useWebGL && fireShaderWebGL) {
+        const shaderStart = performance.now();
         fireShaderWebGL.render(time);
-
-        // Batch read all pixels once instead of per-character
         const pixelCache = fireShaderWebGL.getAllPixels();
+        shaderTime = performance.now() - shaderStart;
 
+        const domStart = performance.now();
         const lineCount = lines.length;
         const result = new Array(lineCount);
 
@@ -101,18 +125,70 @@ const styles = {
             const u = charIndex / lineLength;
             const v = i / lineCount;
             const color = fireShaderWebGL.getColorAtFromCache(u, v, pixelCache);
-            const glowColor = `rgb(${color.r},${color.g},${color.b})`;
-            chars[charIndex] = `<span style="color:${glowColor};text-shadow:0 0 15px ${glowColor}">${char}</span>`;
+            const colorStr = `rgb(${color.r},${color.g},${color.b})`;
+            const style = glowStyle ? `color:${colorStr};${glowStyle}${colorStr}` : `color:${colorStr}`;
+            chars[charIndex] = `<span style="${style}">${char}</span>`;
+            charCount++;
           }
 
           result[i] = chars.join('');
         }
 
         asciiArt.innerHTML = result.join('\n');
-      } else if (fireShaderOptimized) {
-        asciiArt.innerHTML = fireShaderOptimized.applyToLines(lines, time);
+        const domTime = performance.now() - domStart;
+
+        shaderCalls = '1 GPU render + 1 readPixels';
+        updateFireStats('WebGL GPU', '65,536', performance.now() - startTime, {
+          shaderTime,
+          domTime,
+          shaderCalls,
+          charCount
+        });
+      } else if (useCPU && fireShaderOptimized) {
+        // Use optimized CPU
+        const shaderStart = performance.now();
+        fireShaderOptimized.setQuality(fireSettings.quality);
+
+        const lineCount = lines.length;
+        fireShaderOptimized.precomputeGrid(time);
+        shaderCalls = fireShaderOptimized.gridCols * fireShaderOptimized.gridRows;
+        shaderTime = performance.now() - shaderStart;
+
+        const domStart = performance.now();
+        const result = new Array(lineCount);
+
+        for (let i = 0; i < lineCount; i++) {
+          const line = lines[i];
+          const lineLength = line.length || 1;
+          const v = i / lineCount;
+          const chars = new Array(lineLength);
+
+          for (let charIndex = 0; charIndex < lineLength; charIndex++) {
+            const char = line[charIndex];
+            const u = charIndex / lineLength;
+            const color = fireShaderOptimized.getColorAtUV(u, v);
+            const colorStr = `rgb(${color.r},${color.g},${color.b})`;
+            const style = glowStyle ? `color:${colorStr};${glowStyle}${colorStr}` : `color:${colorStr}`;
+            chars[charIndex] = `<span style="${style}">${char}</span>`;
+            charCount++;
+          }
+
+          result[i] = chars.join('');
+        }
+
+        asciiArt.innerHTML = result.join('\n');
+        const domTime = performance.now() - domStart;
+
+        const zones = `${fireShaderOptimized.gridCols}×${fireShaderOptimized.gridRows} (${fireShaderOptimized.gridCols * fireShaderOptimized.gridRows})`;
+        updateFireStats('Optimized CPU', zones, performance.now() - startTime, {
+          shaderTime,
+          domTime,
+          shaderCalls: `${shaderCalls} calls/frame`,
+          charCount
+        });
       } else {
         // Fallback to original grid sampling
+        const shaderStart = performance.now();
         const gridCols = 20;
         const gridRows = 20;
         const colorGrid = [];
@@ -125,9 +201,12 @@ const styles = {
               y: gy / (gridRows - 1)
             };
             colorGrid[gy][gx] = fireShader(uv, time);
+            shaderCalls++;
           }
         }
+        shaderTime = performance.now() - shaderStart;
 
+        const domStart = performance.now();
         const lineCount = lines.length;
         asciiArt.innerHTML = lines.map((line, i) => {
           const lineLength = line.length || 1;
@@ -136,10 +215,20 @@ const styles = {
           return Array.from(line).map((char, charIndex) => {
             const gridX = Math.floor((charIndex / lineLength) * (gridCols - 1));
             const color = colorGrid[gridY][gridX];
-            const glowColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
-            return `<span style="color: ${glowColor}; text-shadow: 0 0 15px ${glowColor}">${char}</span>`;
+            const colorStr = `rgb(${color.r}, ${color.g}, ${color.b})`;
+            const style = glowStyle ? `color:${colorStr};${glowStyle}${colorStr}` : `color:${colorStr}`;
+            charCount++;
+            return `<span style="${style}">${char}</span>`;
           }).join('');
         }).join('\n');
+        const domTime = performance.now() - domStart;
+
+        updateFireStats('Original CPU', '20×20 (400)', performance.now() - startTime, {
+          shaderTime,
+          domTime,
+          shaderCalls: `${shaderCalls} calls/frame`,
+          charCount
+        });
       }
 
       const renderTime = performance.now() - startTime;
@@ -214,13 +303,39 @@ function updatePerformanceMonitor(renderTime) {
 
   // Adaptive quality: if FPS drops below 25, reduce quality
   if (performanceMonitor.avgFps < 25 && now - performanceMonitor.lastDropTime > 2000) {
-    if (fireShaderOptimized) {
+    if (fireShaderOptimized && fireSettings.mode !== 'webgl') {
       console.log('FPS drop detected, reducing quality');
-      fireShaderOptimized.setQuality('low');
+      if (fireSettings.quality === 'high') {
+        fireSettings.quality = 'medium';
+      } else if (fireSettings.quality === 'medium') {
+        fireSettings.quality = 'low';
+      }
+      fireShaderOptimized.setQuality(fireSettings.quality);
       performanceMonitor.lastDropTime = now;
     }
   } else if (performanceMonitor.avgFps > 28 && fireShaderOptimized && now - performanceMonitor.lastDropTime > 5000) {
-    fireShaderOptimized.setQuality('high');
+    if (fireSettings.quality === 'low') {
+      fireSettings.quality = 'medium';
+      fireShaderOptimized.setQuality(fireSettings.quality);
+    } else if (fireSettings.quality === 'medium') {
+      fireSettings.quality = 'high';
+      fireShaderOptimized.setQuality(fireSettings.quality);
+    }
+  }
+}
+
+function updateFireStats(mode, zones, frameTime, details = {}) {
+  if (fireControlPanel) {
+    fireControlPanel.updateStats({
+      mode: mode,
+      fps: performanceMonitor.avgFps,
+      avgFps: performanceMonitor.avgFps,
+      frameTime: frameTime,
+      colorZones: zones,
+      shaderCalls: details.shaderCalls || '-',
+      charCount: details.charCount || '-',
+      domTime: details.domTime || 0
+    });
   }
 }
 
@@ -373,6 +488,40 @@ window.addEventListener("mousemove", (e) => {
 
 if (frames && frames.length > 0) {
   initFireShader();
+
+  // Initialize fire control panel
+  fireControlPanel = new FireControlPanel((settings) => {
+    fireSettings = settings;
+    // Apply settings immediately if fire effect is active
+    if (currentStyle === 'fire') {
+      displayFrame(currentFrame);
+    }
+  });
+  fireControlPanel.create();
+
+  // Only show toggle button when fire effect is active
+  let panelToggleBtn = null;
+
+  const originalDisplayFrame = displayFrame;
+  displayFrame = function(index) {
+    originalDisplayFrame.call(this, index);
+
+    // Show/hide toggle button based on style
+    if (currentStyle === 'fire') {
+      if (!panelToggleBtn) {
+        panelToggleBtn = createPanelToggleButton(fireControlPanel);
+      }
+    } else {
+      if (panelToggleBtn) {
+        panelToggleBtn.remove();
+        panelToggleBtn = null;
+      }
+      if (fireControlPanel.isOpen) {
+        fireControlPanel.toggle();
+      }
+    }
+  };
+
   createStylePicker();
   displayFrame(0);
   setInterval(() => {
