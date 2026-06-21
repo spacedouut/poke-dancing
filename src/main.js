@@ -3,6 +3,8 @@ import { frames } from './animation.js';
 import { generateLiquidGlassFilter } from './liquidGlass.js';
 import { LiquidGlassBlob } from './liquidGlassWebGL.js';
 import { fireShader } from './fireShader.js';
+import { FireShaderWebGL } from './fireShaderWebGL.js';
+import { FireShaderOptimized } from './fireShaderOptimized.js';
 
 const fps = 30;
 const stage = document.getElementById("stage");
@@ -17,6 +19,9 @@ let liquidGlassBlobWebGL = null;
 let svgDefs = null;
 let mouseX = 0;
 let mouseY = 0;
+let fireShaderWebGL = null;
+let fireShaderOptimized = null;
+let performanceMonitor = { frames: [], avgFps: 30, lastDropTime: 0 };
 
 const styles = {
   'classic': {
@@ -73,15 +78,69 @@ const styles = {
     font: '"Courier New", monospace',
     apply: () => {
       const lines = asciiArt.textContent.split("\n");
-      const lineCount = lines.length;
       const time = Date.now() / 1000;
+      const startTime = performance.now();
 
-      asciiArt.innerHTML = lines.map((line, i) => {
-        const uv = { x: 0.5, y: i / lineCount };
-        const color = fireShader(uv, time);
-        const glowColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
-        return `<span style="color: ${glowColor}; text-shadow: 0 0 10px ${glowColor}, 0 0 20px ${glowColor}, 0 0 30px ${glowColor}">${line}</span>`;
-      }).join('\n');
+      // Try WebGL first, fall back to optimized CPU
+      if (fireShaderWebGL) {
+        fireShaderWebGL.render(time);
+
+        const lineCount = lines.length;
+        const result = new Array(lineCount);
+
+        for (let i = 0; i < lineCount; i++) {
+          const line = lines[i];
+          const lineLength = line.length || 1;
+          const chars = new Array(lineLength);
+
+          for (let charIndex = 0; charIndex < lineLength; charIndex++) {
+            const char = line[charIndex];
+            const u = charIndex / lineLength;
+            const v = i / lineCount;
+            const color = fireShaderWebGL.getColorAt(u, v);
+            const glowColor = `rgb(${color.r},${color.g},${color.b})`;
+            chars[charIndex] = `<span style="color:${glowColor};text-shadow:0 0 15px ${glowColor}">${char}</span>`;
+          }
+
+          result[i] = chars.join('');
+        }
+
+        asciiArt.innerHTML = result.join('\n');
+      } else if (fireShaderOptimized) {
+        asciiArt.innerHTML = fireShaderOptimized.applyToLines(lines, time);
+      } else {
+        // Fallback to original grid sampling
+        const gridCols = 20;
+        const gridRows = 20;
+        const colorGrid = [];
+
+        for (let gy = 0; gy < gridRows; gy++) {
+          colorGrid[gy] = [];
+          for (let gx = 0; gx < gridCols; gx++) {
+            const uv = {
+              x: gx / (gridCols - 1),
+              y: gy / (gridRows - 1)
+            };
+            colorGrid[gy][gx] = fireShader(uv, time);
+          }
+        }
+
+        const lineCount = lines.length;
+        asciiArt.innerHTML = lines.map((line, i) => {
+          const lineLength = line.length || 1;
+          const gridY = Math.floor((i / lineCount) * (gridRows - 1));
+
+          return Array.from(line).map((char, charIndex) => {
+            const gridX = Math.floor((charIndex / lineLength) * (gridCols - 1));
+            const color = colorGrid[gridY][gridX];
+            const glowColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+            return `<span style="color: ${glowColor}; text-shadow: 0 0 15px ${glowColor}">${char}</span>`;
+          }).join('');
+        }).join('\n');
+      }
+
+      const renderTime = performance.now() - startTime;
+      updatePerformanceMonitor(renderTime);
     }
   },
   'chromatic': {
@@ -132,6 +191,50 @@ const styles = {
     }
   }
 };
+
+function updatePerformanceMonitor(renderTime) {
+  const now = performance.now();
+  performanceMonitor.frames.push({ time: now, renderTime });
+
+  // Keep last 60 frames
+  if (performanceMonitor.frames.length > 60) {
+    performanceMonitor.frames.shift();
+  }
+
+  // Calculate average FPS
+  if (performanceMonitor.frames.length >= 2) {
+    const first = performanceMonitor.frames[0].time;
+    const last = performanceMonitor.frames[performanceMonitor.frames.length - 1].time;
+    const duration = (last - first) / 1000;
+    performanceMonitor.avgFps = performanceMonitor.frames.length / duration;
+  }
+
+  // Adaptive quality: if FPS drops below 25, reduce quality
+  if (performanceMonitor.avgFps < 25 && now - performanceMonitor.lastDropTime > 2000) {
+    if (fireShaderOptimized) {
+      console.log('FPS drop detected, reducing quality');
+      fireShaderOptimized.setQuality('low');
+      performanceMonitor.lastDropTime = now;
+    }
+  } else if (performanceMonitor.avgFps > 28 && fireShaderOptimized && now - performanceMonitor.lastDropTime > 5000) {
+    fireShaderOptimized.setQuality('high');
+  }
+}
+
+function initFireShader() {
+  // Try WebGL first
+  fireShaderWebGL = new FireShaderWebGL();
+  if (fireShaderWebGL.init()) {
+    console.log('Fire shader: WebGL mode (GPU accelerated)');
+    return;
+  }
+
+  // Fallback to optimized CPU
+  console.log('Fire shader: Optimized CPU mode');
+  fireShaderWebGL = null;
+  fireShaderOptimized = new FireShaderOptimized();
+  fireShaderOptimized.setQuality('high');
+}
 
 function fit() {
   const w = asciiArt.offsetWidth;
@@ -266,6 +369,7 @@ window.addEventListener("mousemove", (e) => {
 });
 
 if (frames && frames.length > 0) {
+  initFireShader();
   createStylePicker();
   displayFrame(0);
   setInterval(() => {

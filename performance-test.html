@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fire Shader Performance Test</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1a1a1a;
+      color: #fff;
+    }
+    #controls {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0,0,0,0.8);
+      padding: 20px;
+      border-radius: 8px;
+      min-width: 250px;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin: 5px 0;
+      border: none;
+      border-radius: 4px;
+      background: #4CAF50;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:hover {
+      background: #45a049;
+    }
+    button.active {
+      background: #2196F3;
+    }
+    #stats {
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 4px;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+    }
+    .stat-label {
+      color: #aaa;
+    }
+    .stat-value {
+      font-weight: bold;
+      font-family: 'Courier New', monospace;
+    }
+    .stat-value.good {
+      color: #4CAF50;
+    }
+    .stat-value.warning {
+      color: #ff9800;
+    }
+    .stat-value.bad {
+      color: #f44336;
+    }
+    #ascii-container {
+      margin-right: 300px;
+    }
+    h1 {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+    h2 {
+      font-size: 16px;
+      color: #888;
+      margin-top: 20px;
+      margin-bottom: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="controls">
+    <h1>Fire Shader Test</h1>
+
+    <h2>Implementation</h2>
+    <button id="btn-original">Original (20×20 Grid)</button>
+    <button id="btn-optimized-cpu">Optimized CPU (40×40)</button>
+    <button id="btn-webgl">WebGL GPU</button>
+
+    <h2>Quality (CPU only)</h2>
+    <button id="btn-low">Low (20×20)</button>
+    <button id="btn-medium">Medium (40×40)</button>
+    <button id="btn-high">High (60×60)</button>
+
+    <div id="stats">
+      <div class="stat-row">
+        <span class="stat-label">Mode:</span>
+        <span class="stat-value" id="stat-mode">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Grid Size:</span>
+        <span class="stat-value" id="stat-grid">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">FPS:</span>
+        <span class="stat-value" id="stat-fps">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Frame Time:</span>
+        <span class="stat-value" id="stat-frametime">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Shader Calls:</span>
+        <span class="stat-value" id="stat-calls">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Characters:</span>
+        <span class="stat-value" id="stat-chars">-</span>
+      </div>
+      <div class="stat-row">
+        <span class="stat-label">Color Zones:</span>
+        <span class="stat-value" id="stat-zones">-</span>
+      </div>
+    </div>
+  </div>
+
+  <div id="ascii-container">
+    <pre id="ascii-art" style="color: #fff; line-height: 1; letter-spacing: 0;">Loading...</pre>
+  </div>
+
+  <script type="module">
+    import { FireShaderWebGL } from './src/fireShaderWebGL.js';
+    import { FireShaderOptimized } from './src/fireShaderOptimized.js';
+    import { fireShader } from './src/fireShader.js';
+
+    const testArt = `
+      ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⣀⡀⠀⠀⠀⠀⠀⠀⠀
+      ⠀⠀⠀⠀⠀⣀⣤⣶⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣶⣤⣀⠀⠀⠀
+      ⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣄⠀
+      ⠀⠀⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣆
+      ⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+      ⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+      ⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠿⠿⠿⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+      ⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⠀⠀⠀⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿
+      ⠸⣿⣿⣿⣿⣿⣿⣿⣿⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⣿⣿⣿⣿⣿⣿⣿⣿⡿
+      ⠀⢻⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⠃
+      ⠀⠀⠻⣿⣿⣿⣿⣿⣿⣷⣄⠀⠀⠀⠀⠀⠀⠀⠀⣠⣾⣿⣿⣿⣿⣿⣿⣿⠏⠀
+      ⠀⠀⠀⠙⢿⣿⣿⣿⣿⣿⣿⣿⣶⣤⣤⣤⣤⣶⣿⣿⣿⣿⣿⣿⣿⣿⡿⠋⠀⠀
+      ⠀⠀⠀⠀⠀⠙⠻⢿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠋⠀⠀⠀⠀
+      ⠀⠀⠀⠀⠀⠀⠀⠀⠈⠉⠛⠛⠿⠿⠿⠿⠿⠿⠛⠛⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀
+    `.trim();
+
+    let mode = 'original';
+    let webglShader = null;
+    let cpuShader = null;
+    let animationId = null;
+    let frameCount = 0;
+    let lastFpsTime = performance.now();
+    let frameTimes = [];
+
+    function updateStats() {
+      const now = performance.now();
+      const fps = frameCount / ((now - lastFpsTime) / 1000);
+
+      if (now - lastFpsTime >= 1000) {
+        const avgFrameTime = frameTimes.reduce((a,b) => a+b, 0) / frameTimes.length;
+
+        document.getElementById('stat-fps').textContent = fps.toFixed(1);
+        document.getElementById('stat-fps').className = `stat-value ${fps >= 55 ? 'good' : fps >= 25 ? 'warning' : 'bad'}`;
+
+        document.getElementById('stat-frametime').textContent = avgFrameTime.toFixed(2) + ' ms';
+        document.getElementById('stat-frametime').className = `stat-value ${avgFrameTime < 16 ? 'good' : avgFrameTime < 33 ? 'warning' : 'bad'}`;
+
+        frameCount = 0;
+        lastFpsTime = now;
+        frameTimes = [];
+      }
+
+      const lines = testArt.split('\\n');
+      const charCount = lines.reduce((sum, line) => sum + line.length, 0);
+      document.getElementById('stat-chars').textContent = charCount.toString();
+    }
+
+    function renderOriginal() {
+      const start = performance.now();
+      const lines = testArt.split('\\n');
+      const time = Date.now() / 1000;
+      const gridCols = 20, gridRows = 20;
+
+      const colorGrid = [];
+      for (let gy = 0; gy < gridRows; gy++) {
+        colorGrid[gy] = [];
+        for (let gx = 0; gx < gridCols; gx++) {
+          colorGrid[gy][gx] = fireShader({x: gx/(gridCols-1), y: gy/(gridRows-1)}, time);
+        }
+      }
+
+      const html = lines.map((line, i) => {
+        const lineLength = line.length || 1;
+        const gridY = Math.floor((i / lines.length) * (gridRows - 1));
+        return Array.from(line).map((char, j) => {
+          const gridX = Math.floor((j / lineLength) * (gridCols - 1));
+          const c = colorGrid[gridY][gridX];
+          const col = \`rgb(\${c.r},\${c.g},\${c.b})\`;
+          return \`<span style="color:\${col};text-shadow:0 0 10px \${col}">\${char}</span>\`;
+        }).join('');
+      }).join('\\n');
+
+      document.getElementById('ascii-art').innerHTML = html;
+
+      document.getElementById('stat-mode').textContent = 'Original CPU';
+      document.getElementById('stat-grid').textContent = '20×20';
+      document.getElementById('stat-calls').textContent = '400/frame';
+      document.getElementById('stat-zones').textContent = '400';
+
+      frameTimes.push(performance.now() - start);
+      frameCount++;
+      updateStats();
+      animationId = requestAnimationFrame(renderOriginal);
+    }
+
+    function renderOptimizedCPU() {
+      if (!cpuShader) return;
+
+      const start = performance.now();
+      const lines = testArt.split('\\n');
+      const time = Date.now() / 1000;
+
+      document.getElementById('ascii-art').innerHTML = cpuShader.applyToLines(lines, time);
+
+      document.getElementById('stat-mode').textContent = 'Optimized CPU';
+      document.getElementById('stat-grid').textContent = \`\${cpuShader.gridCols}×\${cpuShader.gridRows}\`;
+      document.getElementById('stat-calls').textContent = \`\${cpuShader.gridCols * cpuShader.gridRows}/frame\`;
+      document.getElementById('stat-zones').textContent = \`\${cpuShader.gridCols * cpuShader.gridRows} + interpolation\`;
+
+      frameTimes.push(performance.now() - start);
+      frameCount++;
+      updateStats();
+      animationId = requestAnimationFrame(renderOptimizedCPU);
+    }
+
+    function renderWebGL() {
+      if (!webglShader) return;
+
+      const start = performance.now();
+      const lines = testArt.split('\\n');
+      const time = Date.now() / 1000;
+
+      webglShader.render(time);
+
+      const html = lines.map((line, i) => {
+        const lineLength = line.length || 1;
+        return Array.from(line).map((char, j) => {
+          const u = j / lineLength;
+          const v = i / lines.length;
+          const c = webglShader.getColorAt(u, v);
+          const col = \`rgb(\${c.r},\${c.g},\${c.b})\`;
+          return \`<span style="color:\${col};text-shadow:0 0 10px \${col}">\${char}</span>\`;
+        }).join('');
+      }).join('\\n');
+
+      document.getElementById('ascii-art').innerHTML = html;
+
+      document.getElementById('stat-mode').textContent = 'WebGL GPU';
+      document.getElementById('stat-grid').textContent = '256×256 texture';
+      document.getElementById('stat-calls').textContent = 'GPU parallel';
+      document.getElementById('stat-zones').textContent = '65,536';
+
+      frameTimes.push(performance.now() - start);
+      frameCount++;
+      updateStats();
+      animationId = requestAnimationFrame(renderWebGL);
+    }
+
+    function switchMode(newMode) {
+      if (animationId) cancelAnimationFrame(animationId);
+      mode = newMode;
+
+      document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+
+      if (mode === 'original') {
+        document.getElementById('btn-original').classList.add('active');
+        renderOriginal();
+      } else if (mode === 'optimized-cpu') {
+        document.getElementById('btn-optimized-cpu').classList.add('active');
+        renderOptimizedCPU();
+      } else if (mode === 'webgl') {
+        document.getElementById('btn-webgl').classList.add('active');
+        renderWebGL();
+      }
+    }
+
+    // Initialize
+    cpuShader = new FireShaderOptimized();
+    cpuShader.setQuality('medium');
+
+    webglShader = new FireShaderWebGL();
+    if (!webglShader.init()) {
+      document.getElementById('btn-webgl').disabled = true;
+      document.getElementById('btn-webgl').textContent = 'WebGL (Not Available)';
+      webglShader = null;
+    }
+
+    // Event listeners
+    document.getElementById('btn-original').onclick = () => switchMode('original');
+    document.getElementById('btn-optimized-cpu').onclick = () => switchMode('optimized-cpu');
+    document.getElementById('btn-webgl').onclick = () => switchMode('webgl');
+
+    document.getElementById('btn-low').onclick = () => {
+      if (cpuShader) cpuShader.setQuality('low');
+      if (mode === 'optimized-cpu') switchMode('optimized-cpu');
+    };
+    document.getElementById('btn-medium').onclick = () => {
+      if (cpuShader) cpuShader.setQuality('medium');
+      if (mode === 'optimized-cpu') switchMode('optimized-cpu');
+    };
+    document.getElementById('btn-high').onclick = () => {
+      if (cpuShader) cpuShader.setQuality('high');
+      if (mode === 'optimized-cpu') switchMode('optimized-cpu');
+    };
+
+    // Start with optimized CPU
+    switchMode('optimized-cpu');
+  </script>
+</body>
+</html>
