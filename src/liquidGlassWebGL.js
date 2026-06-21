@@ -182,23 +182,20 @@ export class LiquidGlassBlob {
   }
 
   updatePhysics(dt) {
-    // Smooth mouse following with spring physics
-    const springK = 8.0;
-    const damping = 0.7;
+    // Direct cursor following - no spring physics
+    const prevX = this.mouseX;
+    const prevY = this.mouseY;
 
-    const dx = this.targetX - this.mouseX;
-    const dy = this.targetY - this.mouseY;
+    this.mouseX = this.targetX;
+    this.mouseY = this.targetY;
 
-    this.velocityX += dx * springK * dt;
-    this.velocityY += dy * springK * dt;
+    // Calculate velocity for stretch effect
+    const dx = this.mouseX - prevX;
+    const dy = this.mouseY - prevY;
+    this.velocityX = dx / Math.max(dt, 0.001);
+    this.velocityY = dy / Math.max(dt, 0.001);
 
-    this.velocityX *= Math.pow(damping, dt);
-    this.velocityY *= Math.pow(damping, dt);
-
-    this.mouseX += this.velocityX * dt;
-    this.mouseY += this.velocityY * dt;
-
-    // Blob radius pulsing and stretch based on velocity
+    // Blob radius stretch based on velocity
     const speed = Math.sqrt(this.velocityX * this.velocityX + this.velocityY * this.velocityY);
     this.targetRadius = 100 + speed * 50;
 

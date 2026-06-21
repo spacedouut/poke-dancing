@@ -79,7 +79,8 @@ const styles = {
       asciiArt.innerHTML = lines.map((line, i) => {
         const uv = { x: 0.5, y: i / lineCount };
         const color = fireShader(uv, time);
-        return `<span style="color: rgb(${color.r}, ${color.g}, ${color.b})">${line}</span>`;
+        const glowColor = `rgb(${color.r}, ${color.g}, ${color.b})`;
+        return `<span style="color: ${glowColor}; text-shadow: 0 0 10px ${glowColor}, 0 0 20px ${glowColor}, 0 0 30px ${glowColor}">${line}</span>`;
       }).join('\n');
     }
   },
