@@ -145,6 +145,10 @@ function fit() {
 }
 
 function applyCurrentStyle() {
+  // Reset all custom properties before applying new style
+  asciiArt.style.color = '';
+  asciiArt.style.textShadow = '';
+
   asciiArt.style.fontFamily = styles[currentStyle].font;
   styles[currentStyle].apply();
 
